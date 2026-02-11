@@ -1,10 +1,12 @@
-"""
+﻿"""
 Pydantic schemas for chat/message operations
 """
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
+
+from app.schemas.user import UserSearchResponse
 
 
 class MessageCreate(BaseModel):
@@ -51,6 +53,7 @@ class ConversationResponse(BaseModel):
     is_group: bool
     created_at: datetime
     updated_at: datetime
+    participants: List[UserSearchResponse] = []
     
     class Config:
         from_attributes = True

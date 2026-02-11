@@ -32,9 +32,9 @@ npm run preview
 - `npm run health` - call the backend health endpoint
 
 ## Configuration
-The API base URL is set in `src/api/client.ts` to `http://localhost:8000`. Update that value if your backend runs elsewhere.
-
-The health check script reads `HEALTH_URL` and defaults to `http://127.0.0.1:8000/health`.
+- `VITE_API_BASE_URL` sets the REST API base URL (defaults to `http://localhost:8000`).
+- `VITE_WS_BASE_URL` sets the WebSocket base URL (defaults to `ws://localhost:8000`).
+- The health check script reads `HEALTH_URL` and defaults to `http://127.0.0.1:8000/health`.
 
 ## Project Structure
 

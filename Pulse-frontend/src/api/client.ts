@@ -1,7 +1,10 @@
 ﻿import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import type { RefreshTokenRequest, RefreshTokenResponse } from '../types'
 
-const API_BASE_URL = 'http://localhost:8000'
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(
+  /\/$/,
+  '',
+)
 const ACCESS_TOKEN_KEY = 'accessToken'
 const REFRESH_TOKEN_KEY = 'refreshToken'
 

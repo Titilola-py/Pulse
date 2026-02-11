@@ -53,6 +53,10 @@ class Conversation(Base, TimestampMixin):
         back_populates="conversations"
     )
 
+    @property
+    def participants(self) -> List["User"]:
+        return self.users
+
 
 class Message(Base, TimestampMixin):
     """Message model for storing chat messages"""

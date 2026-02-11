@@ -1,4 +1,4 @@
-"""
+﻿"""
 Chat service for handling chat operations and database interactions (Synchronous)
 """
 from sqlalchemy.orm import Session, selectinload
@@ -20,13 +20,37 @@ class ChatService:
         creator_id: str
     ) -> Conversation:
         """Create a new conversation with participants"""
-        # Ensure creator is in participants
-        participant_ids = list(set(conversation_data.participant_ids + [creator_id]))
-        
+        requested_participants = {
+            participant_id
+            for participant_id in conversation_data.participant_ids
+            if participant_id
+        }
+        requested_participants.discard(creator_id)
+
+        if conversation_data.is_group:
+            if len(requested_participants) < 2:
+                raise ValueError("Group conversations require at least 3 participants.")
+        else:
+            if len(requested_participants) != 1:
+                raise ValueError("Direct conversations require exactly one other participant.")
+            other_id = next(iter(requested_participants))
+            existing = ChatService.find_direct_conversation(
+                db=db,
+                user_a=creator_id,
+                user_b=other_id,
+            )
+            if existing:
+                return existing
+
+        participant_ids = list(requested_participants | {creator_id})
+
         # Fetch all participant users
         stmt = select(User).where(User.id.in_(participant_ids))
         participants = db.execute(stmt).scalars().all()
-        
+
+        if len(participants) != len(participant_ids):
+            raise ValueError("One or more participants could not be found.")
+
         # Create conversation
         conversation = Conversation(
             name=conversation_data.name,
@@ -40,6 +64,27 @@ class ChatService:
         db.refresh(conversation)
         
         return conversation
+
+    @staticmethod
+    def find_direct_conversation(
+        db: Session,
+        user_a: str,
+        user_b: str
+    ) -> Optional[Conversation]:
+        """Find an existing 1:1 conversation between two users"""
+        stmt = select(Conversation).where(
+            Conversation.is_group.is_(False),
+            Conversation.users.any(User.id == user_a),
+            Conversation.users.any(User.id == user_b)
+        ).options(
+            selectinload(Conversation.users)
+        )
+
+        conversations = db.execute(stmt).scalars().all()
+        for conversation in conversations:
+            if len(conversation.users) == 2:
+                return conversation
+        return None
     
     @staticmethod
     def get_conversation(db: Session, conversation_id: str) -> Optional[Conversation]:
@@ -237,4 +282,3 @@ class ChatService:
             conversation_id=conversation_id,
         )
         return status == "ok"
-

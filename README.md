@@ -30,7 +30,8 @@ Frontend:
 - Frontend README: [Pulse-frontend/README.md](https://github.com/Titilola-py/Pulse/blob/main/Pulse-frontend/README.md)
 
 ## Configuration Notes
-- API base URL is defined in `Pulse-frontend/src/api/client.ts`.
+- Frontend API base URL: `VITE_API_BASE_URL` (defaults to `http://localhost:8000`).
+- Frontend WebSocket base URL: `VITE_WS_BASE_URL` (defaults to `ws://localhost:8000`).
 - Health check URL can be overridden with `HEALTH_URL` for `npm run health`.
-- Database URL is fixed in `Pulse-backend/app/db/session.py` as `sqlite:///./pulse.db`.
-- CORS origins are configured in `Pulse-backend/app/main.py`.
+- Backend database URL: `DATABASE_URL` (defaults to `sqlite:///./pulse.db`).
+- Backend CORS: `CORS_ORIGINS`, `CORS_CREDENTIALS`, `CORS_METHODS`, `CORS_HEADERS`.

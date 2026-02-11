@@ -50,6 +50,14 @@ type TypingEvent = {
 
 const ACCESS_TOKEN_KEY = 'accessToken'
 
+const getWebSocketBaseUrl = () => {
+  const envBase = import.meta.env.VITE_WS_BASE_URL
+  if (envBase) return envBase.replace(/\/$/, '')
+  const apiBase = import.meta.env.VITE_API_BASE_URL
+  if (apiBase) return apiBase.replace(/^http/, 'ws').replace(/\/$/, '')
+  return 'ws://localhost:8000'
+}
+
 const normalizeMessage = (message: Message): Message => {
   const fallback = message as Message & {
     created_at?: string
@@ -475,8 +483,9 @@ export default function ConversationDetail() {
 
     setSocketStatus('connecting')
 
+    const wsBaseUrl = getWebSocketBaseUrl()
     const ws = new WebSocket(
-      `ws://localhost:8000/ws/chat/${id}?token=${encodeURIComponent(token)}`,
+      `${wsBaseUrl}/ws/chat/${id}?token=${encodeURIComponent(token)}`,
     )
     socketRef.current = ws
     registerWebSocket(`conversation-${id}`, ws)
