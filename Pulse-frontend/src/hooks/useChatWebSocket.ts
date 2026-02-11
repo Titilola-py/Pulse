@@ -37,9 +37,18 @@ type UseChatWebSocketReturn = {
   sendReadReceipt: (messageId: number) => boolean
 }
 
+const getWebSocketBaseUrl = () => {
+  const envBase = import.meta.env.VITE_WS_BASE_URL
+  if (envBase) return envBase.replace(/\/$/, '')
+  const apiBase = import.meta.env.VITE_API_BASE_URL
+  if (apiBase) return apiBase.replace(/^http/, 'ws').replace(/\/$/, '')
+  return 'ws://localhost:8000'
+}
+
 const buildWebSocketUrl = (conversationId: string | number, token: string) => {
   const encodedToken = encodeURIComponent(token)
-  return `ws://localhost:8000/ws/chat/${conversationId}?token=${encodedToken}`
+  const baseUrl = getWebSocketBaseUrl()
+  return `${baseUrl}/ws/chat/${conversationId}?token=${encodedToken}`
 }
 
 export const useChatWebSocket = ({

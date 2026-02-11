@@ -61,7 +61,8 @@ python app/main.py
 - Health check: http://localhost:8000/health
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-- WebSocket: ws://localhost:8000/api/chat/ws/{conversation_id}?token={jwt}
+- User search: http://localhost:8000/api/users/search?q=... (auth required)
+- WebSocket: ws://localhost:8000/ws/chat/{conversation_id}?token={jwt}
 
 ## Configuration
 Settings are loaded from `.env` via `app/core/config.py`.
@@ -80,9 +81,10 @@ Key values used by the app:
 - `DATABASE_POOL_RECYCLE`
 - `DATABASE_POOL_PRE_PING`
 
-Database URL is currently fixed in `app/db/session.py` as `sqlite:///./pulse.db`. To use PostgreSQL, update the `DATABASE_URL` constant in that file.
+Database URL is read from `DATABASE_URL` (defaults to `sqlite:///./pulse.db`).
+Use a PostgreSQL URL in production (e.g. `postgresql+psycopg2://user:pass@host/db`).
 
-CORS origins are currently hard-coded in `app/main.py` to `http://localhost:3000` and `http://localhost:5173`. Update that list if your frontend runs elsewhere.
+CORS is configured via `CORS_ORIGINS`, `CORS_CREDENTIALS`, `CORS_METHODS`, and `CORS_HEADERS` in `.env`.
 
 ## Project Structure
 

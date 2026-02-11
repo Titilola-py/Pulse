@@ -26,6 +26,7 @@ except Exception as e:
 from app.auth.routes import router as auth_router
 from app.chat.routes import router as chat_router
 from app.websocket.routes import router as websocket_router
+from app.users.routes import router as users_router
 
 
 # Initialize lifespan context
@@ -83,16 +84,17 @@ async def rate_limit_handler(request, exc):
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_credentials,
+    allow_methods=settings.cors_methods,
+    allow_headers=settings.cors_headers,
 )
 
 # routers
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat_router)
 app.include_router(websocket_router)
+app.include_router(users_router)
 
 
 @app.get("/")

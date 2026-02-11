@@ -10,8 +10,8 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-# Single, project-wide database URL (do not override via env vars)
-DATABASE_URL = "sqlite:///./pulse.db"
+# Database URL (can be overridden via DATABASE_URL env var)
+DATABASE_URL = settings.database_url
 
 
 def get_engine_config():
@@ -43,6 +43,10 @@ def get_engine_config():
 
 # Database URL used across the project
 db_url = DATABASE_URL
+
+# Force sync drivers for sync engine
+if "sqlite+aiosqlite" in db_url:
+    db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
 
 # Create sync engine with optimized settings
 engine = create_engine(
@@ -152,4 +156,5 @@ def close_db():
         engine.dispose()
     except Exception as e:
         logger.error("Error closing database: %s", e)
+
 

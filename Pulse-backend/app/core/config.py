@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = True
     
-    # Database (URL is defined in app.db.session)
+    # Database
+    database_url: str = "sqlite:///./pulse.db"
     database_echo: bool = False
     database_pool_size: int = 20
     database_max_overflow: int = 0
