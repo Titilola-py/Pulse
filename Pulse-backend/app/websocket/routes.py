@@ -1,6 +1,7 @@
 """
 WebSocket routes for chat.
 """
+import logging
 from typing import Optional
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
@@ -23,6 +24,8 @@ from app.websocket.manager import manager
 
 
 router = APIRouter(tags=["websocket"])
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_token(websocket: WebSocket) -> Optional[str]:
@@ -63,7 +66,7 @@ async def _mark_message_delivered(message_id: str) -> None:
                 delivered_at=datetime.utcnow(),
             )
         except Exception as e:
-            print(f"Warning: Failed to mark message delivered: {e}")
+            logger.warning("Failed to mark message delivered: %s", e)
         finally:
             db.close()
 
@@ -87,7 +90,7 @@ async def _set_user_presence(
             db.add(user)
             db.commit()
         except Exception as e:
-            print(f"Warning: Failed to update user presence: {e}")
+            logger.warning("Failed to update user presence: %s", e)
         finally:
             db.close()
 
@@ -120,7 +123,7 @@ async def _handle_message_read(
                 return "not_found", None
             return "ok", message.read_at or requested_at
         except Exception as e:
-            print(f"Warning: Failed to mark message read: {e}")
+            logger.warning("Failed to mark message read: %s", e)
             return "error", None
         finally:
             db.close()
@@ -160,7 +163,7 @@ async def _handle_message_delete(
             }
             return "ok", payload
         except Exception as e:
-            print(f"Warning: Failed to delete message: {e}")
+            logger.warning("Failed to delete message: %s", e)
             return "error", None
         finally:
             db.close()

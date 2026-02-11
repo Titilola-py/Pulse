@@ -1,6 +1,7 @@
 """
 FastAPI main application entry point
 """
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,11 +13,13 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.core.config import settings
 from app.core.limiter import limiter
 
+logger = logging.getLogger(__name__)
+
 # Only initialize DB if not using in-memory SQLite in testing
 try:
     from app.db.session import init_db, close_db
 except Exception as e:
-    print(f"Warning: Could not import database functions: {e}")
+    logger.warning("Could not import database functions: %s", e)
     init_db = None
     close_db = None
 
@@ -29,27 +32,27 @@ from app.websocket.routes import router as websocket_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("Application starting...")
+    logger.info("Application starting...")
     try:
         # Initialize database tables
         if init_db:
             init_db()  # Now synchronous
-            print("Database initialized successfully")
+            logger.info("Database initialized successfully")
         else:
-            print("Database initialization skipped")
+            logger.info("Database initialization skipped")
     except Exception as e:
-        print(f"Database initialization error: {e}")
+        logger.error("Database initialization error: %s", e)
 
     yield
 
     # Shutdown
-    print("Application shutting down...")
+    logger.info("Application shutting down...")
     try:
         if close_db:
             close_db()  # Now synchronous
-            print("Database connection closed")
+            logger.info("Database connection closed")
     except Exception as e:
-        print(f"Error closing database: {e}")
+        logger.error("Error closing database: %s", e)
 
 
 # FastAPI application

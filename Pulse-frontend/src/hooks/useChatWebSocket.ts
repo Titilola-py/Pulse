@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   isManualClose,
   markWebSocketManualClose,
@@ -95,7 +95,6 @@ export const useChatWebSocket = ({
     registerWebSocket(connectionKey, socket)
 
     socket.onopen = () => {
-      console.log('WebSocket connected')
       reconnectAttemptRef.current = 0
     }
 
@@ -114,7 +113,6 @@ export const useChatWebSocket = ({
 
     socket.onclose = () => {
       unregisterWebSocket(connectionKey)
-      console.log('WebSocket disconnected')
       if (isManualClose(socket)) {
         return
       }

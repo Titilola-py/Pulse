@@ -1,10 +1,13 @@
 """
 Database session management
 """
+import logging
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # Single, project-wide database URL (do not override via env vars)
@@ -79,9 +82,9 @@ def ensure_user_presence_columns():
                     conn.execute(text("ALTER TABLE users ADD COLUMN is_online BOOLEAN DEFAULT 0"))
                 else:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {column} TIMESTAMP"))
-        print(f"Database updated: added columns to users: {', '.join(missing)}")
+        logger.info("Database updated: added columns to users: %s", ", ".join(missing))
     except Exception as e:
-        print(f"Warning: Failed to ensure user presence columns: {e}")
+        logger.warning("Failed to ensure user presence columns: %s", e)
 
 
 
@@ -108,9 +111,9 @@ def ensure_message_lifecycle_columns():
                     conn.execute(text("ALTER TABLE messages ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
                 else:
                     conn.execute(text(f"ALTER TABLE messages ADD COLUMN {column} TIMESTAMP"))
-        print(f"Database updated: added columns to messages: {', '.join(missing)}")
+        logger.info("Database updated: added columns to messages: %s", ", ".join(missing))
     except Exception as e:
-        print(f"Warning: Failed to ensure message lifecycle columns: {e}")
+        logger.warning("Failed to ensure message lifecycle columns: %s", e)
 
 
 def get_db():
@@ -140,7 +143,7 @@ def init_db():
         ensure_user_presence_columns()
         ensure_message_lifecycle_columns()
     except Exception as e:
-        print(f"⚠️  Warning: Database initialization error: {e}")
+        logger.error("Database initialization error: %s", e)
 
 
 def close_db():
@@ -148,5 +151,5 @@ def close_db():
     try:
         engine.dispose()
     except Exception as e:
-        print(f"⚠️  Warning: Error closing database: {e}")
+        logger.error("Error closing database: %s", e)
 

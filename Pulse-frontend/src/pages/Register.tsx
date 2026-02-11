@@ -4,24 +4,62 @@ import axios from 'axios'
 import { registerUser } from '../api'
 import type { AuthRegisterRequest } from '../types'
 
-const getErrorMessage = (error: unknown) => {
+const PASSWORD_REQUIREMENTS_MESSAGE =
+  'Password must be 8-64 characters and include at least one uppercase letter, one lowercase letter, and one number.'
+
+const passwordRules = [
+  '8-64 characters',
+  'At least one uppercase letter (A-Z)',
+  'At least one lowercase letter (a-z)',
+  'At least one number (0-9)',
+]
+
+const getErrorMessages = (error: unknown): string[] => {
   if (axios.isAxiosError(error)) {
+    const status = error.response?.status
     const data = error.response?.data
+    if (status === 404) {
+      return [PASSWORD_REQUIREMENTS_MESSAGE]
+    }
     if (typeof data === 'string') {
-      return data
+      return [data]
     }
-    if (data && typeof data === 'object' && 'message' in data) {
-      const message = (data as { message?: string }).message
-      if (message) return message
+    if (data && typeof data === 'object') {
+      if ('detail' in data) {
+        const detail = (data as { detail?: unknown }).detail
+        if (Array.isArray(detail)) {
+          const messages = detail
+            .map((item) => {
+              if (item && typeof item === 'object' && 'msg' in item) {
+                const message = (item as { msg?: string }).msg
+                if (typeof message === 'string' && message.trim()) {
+                  return message
+                }
+              }
+              return null
+            })
+            .filter((message): message is string => Boolean(message))
+          if (messages.length > 0) {
+            return messages
+          }
+        }
+        if (typeof detail === 'string' && detail.trim()) {
+          return [detail]
+        }
+      }
+      if ('message' in data) {
+        const message = (data as { message?: string }).message
+        if (message) return [message]
+      }
     }
-    return error.message
+    return [error.message]
   }
 
   if (error instanceof Error) {
-    return error.message
+    return [error.message]
   }
 
-  return 'Something went wrong. Please try again.'
+  return ['Something went wrong. Please try again.']
 }
 
 export default function Register() {
@@ -31,7 +69,7 @@ export default function Register() {
     password: '',
     full_name: '',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [errors, setErrors] = useState<string[]>([])
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -40,35 +78,24 @@ export default function Register() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const validate = () => {
-    if (
-      !formData.username.trim() ||
-      !formData.email.trim() ||
-      !formData.password.trim() ||
-      !formData.full_name.trim()
-    ) {
-      setError('All fields are required.')
-      return false
-    }
-    return true
-  }
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setError(null)
+    setErrors([])
     setSuccessMessage(null)
-
-    if (!validate()) {
-      return
-    }
 
     try {
       setIsSubmitting(true)
-      const response = await registerUser(formData)
+      const payload: AuthRegisterRequest = {
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        ...(formData.full_name?.trim() ? { full_name: formData.full_name } : {}),
+      }
+      const response = await registerUser(payload)
       setSuccessMessage(response.message ?? 'Account created. You can sign in now.')
       setFormData({ username: '', email: '', password: '', full_name: '' })
     } catch (err) {
-      setError(getErrorMessage(err))
+      setErrors(getErrorMessages(err))
     } finally {
       setIsSubmitting(false)
     }
@@ -79,17 +106,16 @@ export default function Register() {
       <h1>Sign up</h1>
       <p>Create your Pulse account and start new conversations.</p>
 
-      <form className="form-card" onSubmit={handleSubmit}>
+      <form className="form-card" onSubmit={handleSubmit} noValidate>
         <label className="form-field">
-          <span className="form-label">Full name</span>
+          <span className="form-label">Full name (optional)</span>
           <input
             className="form-input"
             type="text"
             name="full_name"
-            value={formData.full_name}
+            value={formData.full_name ?? ''}
             onChange={handleChange}
             autoComplete="name"
-            required
           />
         </label>
 
@@ -128,12 +154,37 @@ export default function Register() {
             value={formData.password}
             onChange={handleChange}
             autoComplete="new-password"
+            aria-describedby="password-help"
             required
           />
+          <div id="password-help" className="form-help">
+            <span className="form-help-title">Password requirements</span>
+            <ul className="form-help-list">
+              {passwordRules.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ul>
+          </div>
         </label>
 
-        {error && <p className="form-error">{error}</p>}
-        {successMessage && <p className="form-success">{successMessage}</p>}
+        {errors.length > 0 && (
+          <div className="form-error" role="alert">
+            {errors.length === 1 ? (
+              <p className="form-error-text">{errors[0]}</p>
+            ) : (
+              <ul className="form-error-list">
+                {errors.map((message, index) => (
+                  <li key={`${message}-${index}`}>{message}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {successMessage && (
+          <p className="form-success" role="status">
+            {successMessage}
+          </p>
+        )}
 
         <div className="form-actions">
           <button className="button" type="submit" disabled={isSubmitting}>
