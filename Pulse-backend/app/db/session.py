@@ -21,7 +21,11 @@ def get_engine_config():
     # Convert async database URLs to sync equivalents
     if "sqlite+aiosqlite" in db_url:
         db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
-    
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
     # For SQLite, use NullPool to avoid connection pool issues
     if "sqlite" in db_url:
         return {"poolclass": NullPool, "connect_args": {"check_same_thread": False}}
@@ -47,6 +51,11 @@ db_url = DATABASE_URL
 # Force sync drivers for sync engine
 if "sqlite+aiosqlite" in db_url:
     db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+if db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 
 if "postgresql+asyncpg" in db_url:
     db_url = db_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
