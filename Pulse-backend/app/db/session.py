@@ -48,6 +48,11 @@ db_url = DATABASE_URL
 if "sqlite+aiosqlite" in db_url:
     db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
 
+if "postgresql+asyncpg" in db_url:
+    db_url = db_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+if "postgres+asyncpg" in db_url:
+    db_url = db_url.replace("postgres+asyncpg", "postgresql+psycopg2")
+
 # Create sync engine with optimized settings
 engine = create_engine(
     db_url,
