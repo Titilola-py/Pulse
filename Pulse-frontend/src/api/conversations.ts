@@ -1,5 +1,15 @@
-﻿import api from './client'
-import type { Conversation, Message, ConversationCreateRequest } from '../types'
+import api from './client'
+import type {
+  Conversation,
+  ConversationParticipant,
+  Message,
+  ConversationCreateRequest,
+} from '../types'
+
+export type ConversationMessagesResponse = {
+  participants?: ConversationParticipant[]
+  messages?: Message[]
+}
 
 export const getConversations = async () => {
   const response = await api.get<Conversation[]>('/api/chat/conversations')
@@ -7,7 +17,7 @@ export const getConversations = async () => {
 }
 
 export const getConversationMessages = async (conversationId: string | number) => {
-  const response = await api.get<Message[]>(
+  const response = await api.get<Message[] | ConversationMessagesResponse>(
     `/api/chat/conversations/${conversationId}/messages`,
   )
   return response.data
