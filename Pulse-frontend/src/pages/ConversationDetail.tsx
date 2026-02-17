@@ -17,7 +17,7 @@ import {
   registerWebSocket,
   unregisterWebSocket,
 } from '../utils/websocketRegistry'
-import type { Message, User } from '../types'
+import type { ConversationParticipant, Message } from '../types'
 
 type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -26,13 +26,6 @@ type ReceiptUpdate = {
   status?: Message['status']
   deliveredAt?: Message['deliveredAt']
   readAt?: Message['readAt']
-}
-
-type ReceiptStatus = {
-  status: string
-  label: string
-  timestamp?: string | null
-  checks: 0 | 1 | 2
 }
 
 type TypingUser = {
@@ -60,6 +53,7 @@ const getWebSocketBaseUrl = () => {
 
 const normalizeMessage = (message: Message): Message => {
   const fallback = message as Message & {
+    sender_id?: string | number
     created_at?: string
     delivered_at?: string | null
     read_at?: string | null
@@ -67,6 +61,7 @@ const normalizeMessage = (message: Message): Message => {
 
   return {
     ...message,
+    senderId: message.senderId ?? fallback.sender_id,
     createdAt: message.createdAt ?? fallback.created_at,
     deliveredAt: message.deliveredAt ?? fallback.delivered_at ?? null,
     readAt: message.readAt ?? fallback.read_at ?? null,
@@ -204,34 +199,14 @@ const formatTimestamp = (value?: string | null) => {
   return date.toLocaleString()
 }
 
-const toTitleCase = (value: string) =>
-  value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value
-
-const getReceiptStatus = (message: Message): ReceiptStatus | null => {
-  if (message.readAt || message.status === 'read') {
-    return {
-      status: 'read',
-      label: 'Seen',
-      timestamp: formatTimestamp(message.readAt),
-      checks: 2,
-    }
+const getMessageStatusLabel = (message: Message) => {
+  if (message.readAt) {
+    return 'Seen'
   }
-  if (message.deliveredAt || message.status === 'delivered') {
-    return {
-      status: 'delivered',
-      label: 'Delivered',
-      timestamp: formatTimestamp(message.deliveredAt),
-      checks: 2,
-    }
+  if (message.deliveredAt) {
+    return 'Delivered'
   }
-  if (message.status) {
-    return {
-      status: message.status,
-      label: toTitleCase(message.status),
-      checks: message.status === 'sent' ? 1 : 0,
-    }
-  }
-  return null
+  return 'Sent'
 }
 
 const isNearBottom = (element: HTMLElement, offset = 120) => {
@@ -239,26 +214,11 @@ const isNearBottom = (element: HTMLElement, offset = 120) => {
   return scrollHeight - (scrollTop + clientHeight) <= offset
 }
 
-const getSenderLabel = (
-  message: Message,
-  isOwnMessage: boolean,
-  currentUser?: User | null,
-) => {
-  if (isOwnMessage) {
-    return currentUser?.username ?? currentUser?.email ?? 'You'
-  }
-  if (message.sender?.username) return message.sender.username
-  if (message.sender?.email) return message.sender.email
-  if (message.senderId !== undefined && message.senderId !== null) {
-    return `User ${message.senderId}`
-  }
-  return 'Unknown'
-}
-
 export default function ConversationDetail() {
   const { id } = useParams()
   const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
+  const [participants, setParticipants] = useState<ConversationParticipant[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
@@ -281,6 +241,16 @@ export default function ConversationDetail() {
       return left - right
     })
   }, [messages])
+
+  const participantById = useMemo(() => {
+    const map = new Map<string, ConversationParticipant>()
+    participants.forEach((participant) => {
+      if (participant.id !== undefined && participant.id !== null) {
+        map.set(String(participant.id), participant)
+      }
+    })
+    return map
+  }, [participants])
 
   const messageById = useMemo(() => {
     return new Map(messages.map((message) => [message.id, message]))
@@ -450,7 +420,13 @@ export default function ConversationDetail() {
         setError(null)
         const data = await getConversationMessages(id)
         if (isMounted) {
-          setMessages(data.map(normalizeMessage))
+          if (Array.isArray(data)) {
+            setParticipants([])
+            setMessages(data.map(normalizeMessage))
+          } else {
+            setParticipants(data.participants ?? [])
+            setMessages((data.messages ?? []).map(normalizeMessage))
+          }
         }
       } catch (err) {
         if (isMounted) {
@@ -715,19 +691,26 @@ export default function ConversationDetail() {
 
         <ul className="message-list">
           {sortedMessages.map((message) => {
-            const isOwnMessage =
-              user &&
-              (message.senderId === user.id ||
-                message.sender?.id === user.id)
-            const receipt = isOwnMessage ? getReceiptStatus(message) : null
+            const senderId = message.senderId ?? message.sender?.id
+            const senderKey =
+              senderId !== undefined && senderId !== null ? String(senderId) : null
+            const currentUserId = user ? String(user.id) : null
+            const isMine = senderKey !== null && senderKey === currentUserId
+            const senderParticipant = senderKey ? participantById.get(senderKey) : undefined
             const createdLabel = formatTimestamp(message.createdAt)
-            const senderLabel = getSenderLabel(message, Boolean(isOwnMessage), user)
+            const senderLabel = isMine
+              ? user?.username ?? user?.email ?? 'You'
+              : message.sender?.username ??
+                senderParticipant?.username ??
+                senderParticipant?.full_name ??
+                (senderId !== undefined && senderId !== null ? `User ${senderId}` : 'Unknown')
+            const statusLabel = isMine ? getMessageStatusLabel(message) : null
 
             return (
               <li
                 key={message.id}
                 ref={setMessageRef(message.id)}
-                className={`message-item ${isOwnMessage ? 'is-own' : ''}`}
+                className={`message-item ${isMine ? 'is-own' : ''}`}
               >
                 <div className="message-bubble">
                   <div className="message-header">
@@ -738,26 +721,7 @@ export default function ConversationDetail() {
                   </div>
                   <p className="message-content">{message.content}</p>
                   <div className="message-meta">
-                    {receipt && (
-                      <span
-                        className={`message-receipt ${
-                          receipt.status === 'read' ? 'message-receipt--read' : ''
-                        }`}
-                      >
-                        {receipt.checks > 0 && (
-                          <span className="receipt-checks" aria-hidden="true">
-                            <span className="receipt-check" />
-                            {receipt.checks > 1 && (
-                              <span className="receipt-check" />
-                            )}
-                          </span>
-                        )}
-                        <span className="receipt-label">
-                          {receipt.label}
-                          {receipt.timestamp ? ` • ${receipt.timestamp}` : ''}
-                        </span>
-                      </span>
-                    )}
+                    {statusLabel && <span className="message-receipt">{statusLabel}</span>}
                   </div>
                 </div>
               </li>
