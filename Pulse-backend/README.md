@@ -19,7 +19,7 @@ Real-time chat and collaboration API built with FastAPI.
 1. Clone the repository and enter the backend folder:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Titilola-py/Pulse.git
 cd Pulse-backend
 ```
 

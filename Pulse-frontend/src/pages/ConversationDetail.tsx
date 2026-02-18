@@ -217,6 +217,7 @@ const isNearBottom = (element: HTMLElement, offset = 120) => {
 export default function ConversationDetail() {
   const { id } = useParams()
   const { user } = useAuth()
+  const currentUserId = user ? String(user.id) : null
   const [messages, setMessages] = useState<Message[]>([])
   const [participants, setParticipants] = useState<ConversationParticipant[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -251,6 +252,21 @@ export default function ConversationDetail() {
     })
     return map
   }, [participants])
+
+  const otherParticipantUsername = useMemo(() => {
+    if (!currentUserId) {
+      return null
+    }
+
+    const otherParticipant = participants.find((participant) => {
+      if (participant.id === undefined || participant.id === null) {
+        return false
+      }
+      return String(participant.id) !== currentUserId
+    })
+
+    return otherParticipant?.username ?? null
+  }, [currentUserId, participants])
 
   const messageById = useMemo(() => {
     return new Map(messages.map((message) => [message.id, message]))
@@ -655,7 +671,9 @@ export default function ConversationDetail() {
     <section className="chat-thread">
       <div className="chat-topbar">
         <div>
-          <p className="chat-title">Conversation {id}</p>
+          {otherParticipantUsername && (
+            <p className="chat-title">{otherParticipantUsername}</p>
+          )}
           <span className={`chat-status status-${socketStatus}`}>{socketStatus}</span>
         </div>
         <button className="icon-button" type="button" aria-label="Conversation settings">
@@ -694,7 +712,6 @@ export default function ConversationDetail() {
             const senderId = message.senderId ?? message.sender?.id
             const senderKey =
               senderId !== undefined && senderId !== null ? String(senderId) : null
-            const currentUserId = user ? String(user.id) : null
             const isMine = senderKey !== null && senderKey === currentUserId
             const senderParticipant = senderKey ? participantById.get(senderKey) : undefined
             const createdLabel = formatTimestamp(message.createdAt)

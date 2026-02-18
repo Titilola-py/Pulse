@@ -33,3 +33,20 @@ export type RefreshTokenResponse = {
   refresh_token: string
   token_type: string
 }
+
+export type AuthForgotPasswordRequest = {
+  email: string
+}
+
+export type AuthForgotPasswordResponse = {
+  message?: string
+}
+
+export type AuthResetPasswordRequest = {
+  token: string
+  new_password: string
+}
+
+export type AuthResetPasswordResponse = {
+  message?: string
+}
