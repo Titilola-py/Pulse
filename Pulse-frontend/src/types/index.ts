@@ -4,7 +4,7 @@ export type ApiError = {
 }
 
 export type { ApiResponse } from './api'
-export type { User, UserSearchResult } from './user'
+export type { User, UserSearchResult, AdminUser, UserRole } from './user'
 export type { Message } from './message'
 export type { Conversation, ConversationParticipant, ConversationCreateRequest } from './conversation'
 export type {

@@ -1806,3 +1806,38 @@ a {
   }
 }
 
+
+.admin-users-card {
+  overflow: hidden;
+}
+
+.admin-users-table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  white-space: nowrap;
+}
+
+.admin-users-table th {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.admin-users-table td {
+  color: #1f2937;
+}

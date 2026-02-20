@@ -1,6 +1,8 @@
 import { Route, Routes } from 'react-router-dom'
 import Header from './components/Header'
+import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
+import AdminUsers from './pages/AdminUsers'
 import ConversationDetail from './pages/ConversationDetail'
 import Conversations from './pages/Conversations'
 import ConversationsEmpty from './pages/ConversationsEmpty'
@@ -30,6 +32,9 @@ export default function App() {
             <Route path="/conversations" element={<Conversations />}>
               <Route index element={<ConversationsEmpty />} />
               <Route path=":id" element={<ConversationDetail />} />
+            </Route>
+            <Route element={<RequireAdmin />}>
+              <Route path="/admin/users" element={<AdminUsers />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFound />} />

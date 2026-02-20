@@ -32,6 +32,7 @@ export default function UserMenu() {
 
   const initials = useMemo(() => (user ? getInitials(user) : ''), [user])
   const displayName = user ? getDisplayName(user) : ''
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     if (!isOpen) return
@@ -93,6 +94,11 @@ export default function UserMenu() {
           <Link to="/profile" className="dropdown-item" onClick={handleClose}>
             Profile
           </Link>
+          {isAdmin && (
+            <Link to="/admin/users" className="dropdown-item" onClick={handleClose}>
+              Admin users
+            </Link>
+          )}
           <Link to="/support" className="dropdown-item" onClick={handleClose}>
             Support
           </Link>
