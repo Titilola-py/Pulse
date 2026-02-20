@@ -192,6 +192,26 @@ def ensure_password_reset_columns() -> None:
         logger.warning("Failed to ensure password reset columns: %s", exc)
 
 
+def ensure_user_role_column() -> None:
+    # Ensure role column exists and has valid values
+    try:
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return
+
+        existing_columns = {col["name"] for col in inspector.get_columns("users")}
+        existing_indexes = {idx["name"] for idx in inspector.get_indexes("users")}
+
+        with engine.begin() as conn:
+            if "role" not in existing_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'"))
+            conn.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR role NOT IN ('user', 'admin')"))
+            if "ix_users_role" not in existing_indexes:
+                conn.execute(text("CREATE INDEX ix_users_role ON users (role)"))
+    except Exception as exc:
+        logger.warning("Failed to ensure user role column: %s", exc)
+
+
 def get_db() -> Generator[Session, None, None]:
     """Dependency for getting a sync database session."""
     session = SessionLocal()
@@ -223,6 +243,7 @@ def init_db() -> None:
         ensure_user_presence_columns()
         ensure_message_lifecycle_columns()
         ensure_password_reset_columns()
+        ensure_user_role_column()
     except Exception as exc:
         logger.error("Database initialization error: %s", exc)
 

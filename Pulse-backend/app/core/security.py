@@ -3,14 +3,14 @@ Security utilities - JWT, password hashing, authentication
 """
 from datetime import datetime, timedelta
 import re
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -56,7 +56,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # JWT utilities
 
-def _build_token_payload(subject: str, token_type: str, expires_delta: timedelta, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _build_token_payload(
+    subject: str,
+    token_type: str,
+    expires_delta: timedelta,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     to_encode: Dict[str, Any] = {
         "sub": subject,
         "type": token_type,
@@ -67,7 +72,11 @@ def _build_token_payload(subject: str, token_type: str, expires_delta: timedelta
     return to_encode
 
 
-def create_access_token(subject: str, expires_delta: Optional[timedelta] = None, extra: Optional[Dict[str, Any]] = None) -> str:
+def create_access_token(
+    subject: str,
+    expires_delta: Optional[timedelta] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> str:
     """Create a JWT access token."""
     if not subject:
         raise ValueError("Subject is required for access token")
@@ -77,7 +86,11 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None,
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_refresh_token(subject: str, expires_delta: Optional[timedelta] = None, extra: Optional[Dict[str, Any]] = None) -> str:
+def create_refresh_token(
+    subject: str,
+    expires_delta: Optional[timedelta] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> str:
     """Create a JWT refresh token."""
     if not subject:
         raise ValueError("Subject is required for refresh token")
@@ -106,7 +119,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
-):
+) -> User:
     """
     Get the current authenticated user from a Bearer token.
     """
@@ -133,6 +146,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Fetch full user record so role and other auth fields are available to dependencies.
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -141,4 +155,17 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if not user.role:
+        user.role = "user"
+
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require admin role for protected endpoints."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user

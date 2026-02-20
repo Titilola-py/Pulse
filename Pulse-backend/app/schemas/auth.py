@@ -68,6 +68,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: Optional[str]
+    role: str
     is_active: bool
     is_superuser: bool
     is_online: bool
