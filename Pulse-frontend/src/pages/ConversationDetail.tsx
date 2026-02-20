@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from 'react'
-import { useParams } from 'react-router-dom'
+import { useOutletContext, useParams } from 'react-router-dom'
 import axios from 'axios'
 import { getConversationMessages } from '../api'
 import { useAuth } from '../context/AuthContext'
@@ -41,6 +41,13 @@ type TypingEvent = {
   userId?: Message['senderId']
 }
 
+type ConversationsOutletContext = {
+  onConversationRead?: (conversationId: string | number) => void
+  onConversationPreviewUpdate?: (
+    conversationId: string | number,
+    preview: string,
+  ) => void
+}
 const ACCESS_TOKEN_KEY = 'accessToken'
 
 const getWebSocketBaseUrl = () => {
@@ -54,15 +61,34 @@ const getWebSocketBaseUrl = () => {
 const normalizeMessage = (message: Message): Message => {
   const fallback = message as Message & {
     sender_id?: string | number
+    sender_name?: string
+    sender_username?: string
     created_at?: string
+    timestamp?: string
     delivered_at?: string | null
     read_at?: string | null
   }
 
+  const senderId = message.senderId ?? fallback.sender_id
+  const senderName =
+    message.senderName ??
+    fallback.sender_name ??
+    fallback.sender_username ??
+    message.sender?.username
+
   return {
     ...message,
-    senderId: message.senderId ?? fallback.sender_id,
-    createdAt: message.createdAt ?? fallback.created_at,
+    senderId,
+    senderName,
+    sender:
+      message.sender ??
+      (senderId !== undefined && senderId !== null
+        ? {
+            id: senderId,
+            ...(senderName ? { username: senderName } : {}),
+          }
+        : undefined),
+    createdAt: message.createdAt ?? fallback.created_at ?? fallback.timestamp,
     deliveredAt: message.deliveredAt ?? fallback.delivered_at ?? null,
     readAt: message.readAt ?? fallback.read_at ?? null,
   }
@@ -200,12 +226,18 @@ const formatTimestamp = (value?: string | null) => {
 }
 
 const getMessageStatusLabel = (message: Message) => {
-  if (message.readAt) {
+  if (message.status === 'sending') {
+    return 'Sending...'
+  }
+
+  if (message.readAt || message.status === 'read') {
     return 'Seen'
   }
-  if (message.deliveredAt) {
+
+  if (message.deliveredAt || message.status === 'delivered') {
     return 'Delivered'
   }
+
   return 'Sent'
 }
 
@@ -214,9 +246,22 @@ const isNearBottom = (element: HTMLElement, offset = 120) => {
   return scrollHeight - (scrollTop + clientHeight) <= offset
 }
 
+const toIdKey = (value: string | number | null | undefined) => {
+  if (value === undefined || value === null) {
+    return null
+  }
+
+  return String(value)
+}
+
+const isTempMessageId = (value: Message['id']) =>
+  typeof value === 'string' && value.startsWith('temp-')
+
 export default function ConversationDetail() {
   const { id } = useParams()
   const { user } = useAuth()
+  const { onConversationRead, onConversationPreviewUpdate } =
+    useOutletContext<ConversationsOutletContext>()
   const currentUserId = user ? String(user.id) : null
   const [messages, setMessages] = useState<Message[]>([])
   const [participants, setParticipants] = useState<ConversationParticipant[]>([])
@@ -230,6 +275,7 @@ export default function ConversationDetail() {
   const messageElementsRef = useRef(new Map<Message['id'], HTMLLIElement>())
   const elementMessageIdRef = useRef(new WeakMap<Element, Message['id']>())
   const sentReadReceiptsRef = useRef(new Set<Message['id']>())
+  const pendingReadReceiptsRef = useRef(new Set<Message['id']>())
   const typingTimeoutRef = useRef<number | null>(null)
   const isTypingRef = useRef(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -243,13 +289,51 @@ export default function ConversationDetail() {
     })
   }, [messages])
 
-  const participantById = useMemo(() => {
-    const map = new Map<string, ConversationParticipant>()
+  const participantNameById = useMemo(() => {
+    const map = new Map<string, string>()
+
     participants.forEach((participant) => {
-      if (participant.id !== undefined && participant.id !== null) {
-        map.set(String(participant.id), participant)
+      const participantRecord = participant as ConversationParticipant & {
+        userId?: string | number
+        user_id?: string | number
+        fullName?: string | null
+        user?: {
+          id?: string | number
+          username?: string
+          full_name?: string | null
+          fullName?: string | null
+          email?: string
+        }
       }
+
+      const name =
+        participantRecord.username ??
+        participantRecord.user?.username ??
+        participantRecord.full_name ??
+        participantRecord.user?.full_name ??
+        participantRecord.fullName ??
+        participantRecord.user?.fullName ??
+        participantRecord.email ??
+        participantRecord.user?.email
+
+      if (!name) {
+        return
+      }
+
+      const candidateIds = [
+        participantRecord.id,
+        participantRecord.userId,
+        participantRecord.user_id,
+        participantRecord.user?.id,
+      ]
+
+      candidateIds.forEach((candidateId) => {
+        if (candidateId !== undefined && candidateId !== null) {
+          map.set(String(candidateId), name)
+        }
+      })
     })
+
     return map
   }, [participants])
 
@@ -258,19 +342,39 @@ export default function ConversationDetail() {
       return null
     }
 
-    const otherParticipant = participants.find((participant) => {
-      if (participant.id === undefined || participant.id === null) {
-        return false
+    for (const [participantId, participantName] of participantNameById.entries()) {
+      if (participantId !== currentUserId) {
+        return participantName
       }
-      return String(participant.id) !== currentUserId
-    })
+    }
 
-    return otherParticipant?.username ?? null
-  }, [currentUserId, participants])
+    return null
+  }, [currentUserId, participantNameById])
 
   const messageById = useMemo(() => {
     return new Map(messages.map((message) => [message.id, message]))
   }, [messages])
+
+  const unreadIncomingMessageIds = useMemo(() => {
+    if (!currentUserId) {
+      return [] as Message['id'][]
+    }
+
+    return sortedMessages
+      .filter((message) => {
+        const senderKey = toIdKey(message.senderId ?? message.sender?.id)
+        const isOwnMessage = senderKey === currentUserId
+
+        if (isOwnMessage) {
+          return false
+        }
+
+        return !message.readAt && message.status !== 'read'
+      })
+      .map((message) => message.id)
+  }, [currentUserId, sortedMessages])
+
+  const unreadIncomingCount = unreadIncomingMessageIds.length
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) return null
@@ -305,23 +409,133 @@ export default function ConversationDetail() {
     }
   }, [])
 
-  const upsertMessage = useCallback((incoming: Message) => {
-    const normalized = normalizeMessage(incoming)
-    if (normalized.id === undefined || normalized.id === null) {
-      setMessages((prev) => [...prev, normalized])
+  const markMessagesAsReadLocally = useCallback((messageIds: Message['id'][]) => {
+    if (messageIds.length === 0) {
       return
     }
 
-    setMessages((prev) => {
-      const index = prev.findIndex((message) => message.id === normalized.id)
-      if (index === -1) {
-        return [...prev, normalized]
+    const messageIdKeys = new Set(messageIds.map((messageId) => String(messageId)))
+
+    setMessages((prev) =>
+      prev.map((message) => {
+        if (!messageIdKeys.has(String(message.id))) {
+          return message
+        }
+
+        return {
+          ...message,
+          status: 'read',
+          readAt: message.readAt ?? new Date().toISOString(),
+        }
+      }),
+    )
+  }, [])
+
+  const flushPendingReadReceipts = useCallback(() => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    Array.from(pendingReadReceiptsRef.current).forEach((messageId) => {
+      if (sentReadReceiptsRef.current.has(messageId)) {
+        pendingReadReceiptsRef.current.delete(messageId)
+        return
       }
-      const next = [...prev]
-      next[index] = { ...next[index], ...normalized }
-      return next
+
+      socketRef.current?.send(
+        JSON.stringify({
+          type: 'message_read',
+          message_id: messageId,
+        }),
+      )
+
+      sentReadReceiptsRef.current.add(messageId)
+      pendingReadReceiptsRef.current.delete(messageId)
     })
   }, [])
+
+  const sendReadReceipt = useCallback(
+    (messageId: Message['id']) => {
+      if (messageId === undefined || messageId === null) {
+        return
+      }
+
+      if (sentReadReceiptsRef.current.has(messageId)) {
+        return
+      }
+
+      pendingReadReceiptsRef.current.add(messageId)
+      flushPendingReadReceipts()
+    },
+    [flushPendingReadReceipts],
+  )
+
+  const upsertMessage = useCallback(
+    (incoming: Message) => {
+      const normalized = normalizeMessage(incoming)
+      const normalizedSenderKey = toIdKey(normalized.senderId ?? normalized.sender?.id)
+      const incomingCreatedAt = normalized.createdAt
+        ? new Date(normalized.createdAt).getTime()
+        : Date.now()
+
+      if (normalized.id === undefined || normalized.id === null) {
+        setMessages((prev) => [...prev, normalized])
+        return
+      }
+
+      setMessages((prev) => {
+        const existingIndex = prev.findIndex((message) => message.id === normalized.id)
+        if (existingIndex !== -1) {
+          const next = [...prev]
+          next[existingIndex] = { ...next[existingIndex], ...normalized }
+          return next
+        }
+
+        const isCurrentUserMessage =
+          currentUserId !== null && normalizedSenderKey === currentUserId
+
+        if (isCurrentUserMessage) {
+          const optimisticIndex = prev.findIndex((message) => {
+            if (!isTempMessageId(message.id)) {
+              return false
+            }
+
+            const optimisticSenderKey = toIdKey(message.senderId ?? message.sender?.id)
+            if (optimisticSenderKey !== currentUserId) {
+              return false
+            }
+
+            if (message.content.trim() !== normalized.content.trim()) {
+              return false
+            }
+
+            const optimisticCreatedAt = message.createdAt
+              ? new Date(message.createdAt).getTime()
+              : incomingCreatedAt
+
+            return Math.abs(optimisticCreatedAt - incomingCreatedAt) <= 45000
+          })
+
+          if (optimisticIndex !== -1) {
+            const next = [...prev]
+            next[optimisticIndex] = {
+              ...next[optimisticIndex],
+              ...normalized,
+              status: normalized.status ?? 'sent',
+            }
+            return next
+          }
+        }
+
+        return [...prev, normalized]
+      })
+
+      if (id && normalized.content.trim()) {
+        onConversationPreviewUpdate?.(id, normalized.content)
+      }
+    },
+    [currentUserId, id, onConversationPreviewUpdate],
+  )
 
   const applyReceiptUpdate = useCallback((receipt: ReceiptUpdate) => {
     setMessages((prev) => {
@@ -423,6 +637,11 @@ export default function ConversationDetail() {
   }, [clearTypingTimeout])
 
   useEffect(() => {
+    sentReadReceiptsRef.current.clear()
+    pendingReadReceiptsRef.current.clear()
+  }, [id])
+
+  useEffect(() => {
     if (!id) {
       setError('Conversation ID is missing.')
       return
@@ -484,6 +703,7 @@ export default function ConversationDetail() {
 
     ws.onopen = () => {
       setSocketStatus('connected')
+      flushPendingReadReceipts()
     }
 
     ws.onmessage = (event) => {
@@ -530,8 +750,32 @@ export default function ConversationDetail() {
       unregisterWebSocket(`conversation-${id}`)
       ws.close()
     }
-  }, [id, applyReceiptUpdate, handleTypingEvent, resetTypingState, upsertMessage])
+  }, [id, applyReceiptUpdate, flushPendingReadReceipts, handleTypingEvent, resetTypingState, upsertMessage])
 
+  useEffect(() => {
+    if (!id || !currentUserId) {
+      return
+    }
+
+    if (unreadIncomingMessageIds.length === 0) {
+      onConversationRead?.(id)
+      return
+    }
+
+    unreadIncomingMessageIds.forEach((messageId) => {
+      sendReadReceipt(messageId)
+    })
+
+    markMessagesAsReadLocally(unreadIncomingMessageIds)
+    onConversationRead?.(id)
+  }, [
+    currentUserId,
+    id,
+    markMessagesAsReadLocally,
+    onConversationRead,
+    sendReadReceipt,
+    unreadIncomingMessageIds,
+  ])
   useEffect(() => {
     if (!listRef.current || !user) {
       return
@@ -550,7 +794,7 @@ export default function ConversationDetail() {
           if (!message) return
 
           const isOwnMessage =
-            message.senderId === user.id || message.sender?.id === user.id
+            toIdKey(message.senderId ?? message.sender?.id) === currentUserId
           if (isOwnMessage) return
 
           if (message.readAt || message.status === 'read') {
@@ -558,18 +802,8 @@ export default function ConversationDetail() {
             return
           }
 
-          if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-            return
-          }
-
-          socketRef.current.send(
-            JSON.stringify({
-              type: 'message_read',
-              message_id: messageId,
-            }),
-          )
-
-          sentReadReceiptsRef.current.add(messageId)
+          sendReadReceipt(messageId)
+          markMessagesAsReadLocally([messageId])
         })
       },
       {
@@ -583,7 +817,7 @@ export default function ConversationDetail() {
     return () => {
       observer.disconnect()
     }
-  }, [messageById, user])
+  }, [currentUserId, markMessagesAsReadLocally, messageById, sendReadReceipt, user])
 
   useEffect(() => {
     const node = listRef.current
@@ -644,17 +878,22 @@ export default function ConversationDetail() {
     setError(null)
 
     const optimisticMessage: Message = normalizeMessage({
-      id: `temp-${Date.now()}`,
+      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       content: trimmed,
       createdAt: new Date().toISOString(),
       senderId: user?.id,
+      senderName: user?.username,
       sender: user
         ? { id: user.id, username: user.username, email: user.email }
         : undefined,
-      status: 'sent',
+      status: 'sending',
     })
 
     setMessages((prev) => [...prev, optimisticMessage])
+
+    if (id) {
+      onConversationPreviewUpdate?.(id, trimmed)
+    }
 
     socketRef.current.send(
       JSON.stringify({
@@ -695,7 +934,12 @@ export default function ConversationDetail() {
               <span className="empty-bubble empty-bubble--two" />
               <span className="empty-bubble empty-bubble--three" />
             </div>
-            <h3>No messages yet.</h3>
+            <h3>
+              No messages yet.
+              {unreadIncomingCount > 0 && (
+                <span className="conversation-unread">{unreadIncomingCount}</span>
+              )}
+            </h3>
             <p>Say hello to get the conversation started.</p>
             <button
               className="button"
@@ -713,13 +957,13 @@ export default function ConversationDetail() {
             const senderKey =
               senderId !== undefined && senderId !== null ? String(senderId) : null
             const isMine = senderKey !== null && senderKey === currentUserId
-            const senderParticipant = senderKey ? participantById.get(senderKey) : undefined
+            const senderNameFromParticipants = senderKey ? participantNameById.get(senderKey) : null
             const createdLabel = formatTimestamp(message.createdAt)
             const senderLabel = isMine
               ? user?.username ?? user?.email ?? 'You'
-              : message.sender?.username ??
-                senderParticipant?.username ??
-                senderParticipant?.full_name ??
+              : message.senderName ??
+                message.sender?.username ??
+                senderNameFromParticipants ??
                 (senderId !== undefined && senderId !== null ? `User ${senderId}` : 'Unknown')
             const statusLabel = isMine ? getMessageStatusLabel(message) : null
 
@@ -795,8 +1039,4 @@ export default function ConversationDetail() {
     </section>
   )
 }
-
-
-
-
 

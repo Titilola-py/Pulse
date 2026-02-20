@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { createConversation, getConversations, searchUsers } from '../api'
@@ -76,6 +76,15 @@ const getUnreadCount = (conversation: Conversation) => {
 
 const getSearchResultLabel = (user: UserSearchResult) => user.full_name ?? user.username
 
+type ConversationsOutletContext = {
+  hasConversations: boolean
+  onStartConversation: () => void
+  onConversationRead: (conversationId: Conversation['id']) => void
+  onConversationPreviewUpdate: (
+    conversationId: Conversation['id'],
+    preview: string,
+  ) => void
+}
 export default function Conversations() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -242,6 +251,59 @@ export default function Conversations() {
       return [updated, ...next]
     })
   }
+
+  const onConversationRead = useCallback((conversationId: Conversation['id']) => {
+    setConversations((prev) =>
+      prev.map((conversation) => {
+        if (String(conversation.id) !== String(conversationId)) {
+          return conversation
+        }
+
+        return {
+          ...conversation,
+          unread_count: 0,
+          unreadCount: 0,
+        }
+      }),
+    )
+  }, [])
+
+  const onConversationPreviewUpdate = useCallback(
+    (conversationId: Conversation['id'], preview: string) => {
+      setConversations((prev) => {
+        const index = prev.findIndex(
+          (conversation) => String(conversation.id) === String(conversationId),
+        )
+
+        if (index === -1) {
+          return prev
+        }
+
+        const next = [...prev]
+        const current = next[index]
+        const currentLastMessage = current.last_message
+        const nextLastMessage =
+          typeof currentLastMessage === 'string'
+            ? preview
+            : {
+                ...(currentLastMessage && typeof currentLastMessage === 'object'
+                  ? currentLastMessage
+                  : {}),
+                content: preview,
+                body: preview,
+              }
+
+        const updated: Conversation = {
+          ...current,
+          last_message: nextLastMessage,
+        }
+
+        next.splice(index, 1)
+        return [updated, ...next]
+      })
+    },
+    [],
+  )
 
   const handleCreateConversation = async (
     participants: UserSearchResult[],
@@ -535,11 +597,11 @@ export default function Conversations() {
                       }
                       onClick={handleSelectConversation}
                     >
-                      {({ isActive }) => (
+                      {() => (
                         <>
                           <div className="conversation-title">
                             <span>{title}</span>
-                            {unreadCount > 0 && !isActive && (
+                            {unreadCount > 0 && (
                               <span className="conversation-unread">{unreadCount}</span>
                             )}
                           </div>
@@ -569,8 +631,16 @@ export default function Conversations() {
       </aside>
 
       <div className="chat-main">
-        <Outlet context={{ hasConversations, onStartConversation: handleStartConversation }} />
+        <Outlet
+          context={{
+            hasConversations,
+            onStartConversation: handleStartConversation,
+            onConversationRead,
+            onConversationPreviewUpdate,
+          } satisfies ConversationsOutletContext}
+        />
       </div>
     </section>
   )
 }
+

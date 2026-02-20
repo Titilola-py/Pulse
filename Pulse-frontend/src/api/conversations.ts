@@ -1,3 +1,4 @@
+import axios from 'axios'
 import api from './client'
 import type {
   Conversation,
@@ -17,6 +18,17 @@ export const getConversations = async () => {
 }
 
 export const getConversationMessages = async (conversationId: string | number) => {
+  try {
+    const detailResponse = await api.get<ConversationMessagesResponse>(
+      `/api/chat/conversations/${conversationId}`,
+    )
+    return detailResponse.data
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 404) {
+      throw error
+    }
+  }
+
   const response = await api.get<Message[] | ConversationMessagesResponse>(
     `/api/chat/conversations/${conversationId}/messages`,
   )
