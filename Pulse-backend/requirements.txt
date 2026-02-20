@@ -10,7 +10,10 @@ PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
 bcrypt==4.3.0
 python-multipart==0.0.6
+requests==2.32.5
 redis==5.0.1
 aioredis==2.0.1
 slowapi==0.1.9
 aiosqlite==0.20.0
+asyncpg==0.29.0
+

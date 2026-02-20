@@ -1,7 +1,8 @@
-﻿export type Message = {
+export type Message = {
   id: string | number
   conversationId?: string | number
   senderId?: string | number
+  senderName?: string
   sender?: {
     id: string | number
     username?: string
@@ -13,3 +14,4 @@
   readAt?: string | null
   status?: 'sent' | 'delivered' | 'read' | string
 }
+

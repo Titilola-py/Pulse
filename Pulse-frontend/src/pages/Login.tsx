@@ -111,6 +111,12 @@ export default function Login() {
           />
         </label>
 
+        <p className="auth-switch">
+          <Link className="auth-switch-link" to="/forgot-password">
+            Forgot password?
+          </Link>
+        </p>
+
         {error && <p className="form-error">{error}</p>}
 
         <div className="form-actions">
@@ -143,4 +149,3 @@ export default function Login() {
     </section>
   )
 }
-

@@ -4,11 +4,13 @@ import RequireAuth from './components/RequireAuth'
 import ConversationDetail from './pages/ConversationDetail'
 import Conversations from './pages/Conversations'
 import ConversationsEmpty from './pages/ConversationsEmpty'
+import ForgotPassword from './pages/ForgotPassword'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import Profile from './pages/Profile'
 import Register from './pages/Register'
+import ResetPassword from './pages/ResetPassword'
 import Support from './pages/Support'
 
 export default function App() {
@@ -20,6 +22,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/support" element={<Support />} />
           <Route element={<RequireAuth />}>
             <Route path="/profile" element={<Profile />} />

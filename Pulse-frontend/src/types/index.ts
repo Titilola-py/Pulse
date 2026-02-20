@@ -8,11 +8,15 @@ export type { User, UserSearchResult } from './user'
 export type { Message } from './message'
 export type { Conversation, ConversationParticipant, ConversationCreateRequest } from './conversation'
 export type {
+  AuthForgotPasswordRequest,
+  AuthForgotPasswordResponse,
   AuthLoginRequest,
   AuthLoginResponse,
   AuthMeResponse,
   AuthRegisterRequest,
   AuthRegisterResponse,
+  AuthResetPasswordRequest,
+  AuthResetPasswordResponse,
   RefreshTokenRequest,
   RefreshTokenResponse,
 } from './auth'

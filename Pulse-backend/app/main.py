@@ -2,13 +2,14 @@
 FastAPI main application entry point
 """
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.config import settings
 from app.core.limiter import limiter
@@ -17,16 +18,17 @@ logger = logging.getLogger(__name__)
 
 # Only initialize DB if not using in-memory SQLite in testing
 try:
-    from app.db.session import init_db, close_db
+    from app.db.session import close_db, init_db
 except Exception as e:
     logger.warning("Could not import database functions: %s", e)
     init_db = None
     close_db = None
 
+from app.admin.routes import router as admin_router
 from app.auth.routes import router as auth_router
 from app.chat.routes import router as chat_router
-from app.websocket.routes import router as websocket_router
 from app.users.routes import router as users_router
+from app.websocket.routes import router as websocket_router
 
 
 # Initialize lifespan context
@@ -73,6 +75,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 # SlowAPI middleware enforces per-route limits.
 app.add_middleware(SlowAPIMiddleware)
 
+
 # Return a consistent JSON response when rate limits are exceeded.
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
@@ -80,6 +83,7 @@ async def rate_limit_handler(request, exc):
         status_code=429,
         content={"detail": "Too many requests. Please try again later."},
     )
+
 
 # CORS
 app.add_middleware(
@@ -90,11 +94,13 @@ app.add_middleware(
     allow_headers=settings.cors_headers,
 )
 
+
 # routers
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat_router)
 app.include_router(websocket_router)
 app.include_router(users_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
