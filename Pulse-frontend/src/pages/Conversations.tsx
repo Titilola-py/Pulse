@@ -65,7 +65,14 @@ const getConversationTitle = (conversation: Conversation, currentUser?: User | n
 }
 
 const getConversationPreview = (conversation: Conversation) => {
-  if (!conversation.last_message) return 'No messages yet'
+  const unreadCount = conversation.unread_count ?? conversation.unreadCount ?? 0
+
+  if (!conversation.last_message) {
+    return unreadCount > 0
+      ? `${unreadCount} new message${unreadCount === 1 ? '' : 's'}`
+      : 'No messages yet'
+  }
+
   if (typeof conversation.last_message === 'string') return conversation.last_message
   return conversation.last_message.content ?? conversation.last_message.body ?? 'New update'
 }
@@ -643,4 +650,5 @@ export default function Conversations() {
     </section>
   )
 }
+
 

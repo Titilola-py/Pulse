@@ -41,6 +41,12 @@ type TypingEvent = {
   userId?: Message['senderId']
 }
 
+type PendingOutgoing = {
+  tempId: string
+  content: string
+  createdAtMs: number
+}
+
 type ConversationsOutletContext = {
   onConversationRead?: (conversationId: string | number) => void
   onConversationPreviewUpdate?: (
@@ -63,10 +69,15 @@ const normalizeMessage = (message: Message): Message => {
     sender_id?: string | number
     sender_name?: string
     sender_username?: string
+    temp_id?: string
+    client_temp_id?: string
+    message_id?: string | number
     created_at?: string
     timestamp?: string
     delivered_at?: string | null
     read_at?: string | null
+    body?: string
+    text?: string
   }
 
   const senderId = message.senderId ?? fallback.sender_id
@@ -75,9 +86,15 @@ const normalizeMessage = (message: Message): Message => {
     fallback.sender_name ??
     fallback.sender_username ??
     message.sender?.username
+  const tempId = message.tempId ?? fallback.temp_id ?? fallback.client_temp_id
+  const messageId = message.id ?? fallback.message_id
+  const content = message.content ?? fallback.body ?? fallback.text ?? ''
 
   return {
     ...message,
+    id: messageId,
+    tempId,
+    content,
     senderId,
     senderName,
     sender:
@@ -100,19 +117,30 @@ const parseIncomingMessage = (payload: unknown): Message | null => {
   }
 
   const record = payload as Record<string, unknown>
-  if (record.type === 'message' && 'content' in record) {
-    return record as Message
+  const nestedCandidates = [record.message, record.data, record.payload, record.result]
+
+  for (const candidate of nestedCandidates) {
+    if (!candidate || typeof candidate !== 'object') {
+      continue
+    }
+
+    const messageCandidate = candidate as Record<string, unknown>
+    const hasMessageShape =
+      'id' in messageCandidate ||
+      'message_id' in messageCandidate ||
+      'content' in messageCandidate ||
+      'body' in messageCandidate ||
+      'text' in messageCandidate
+
+    if (hasMessageShape) {
+      return messageCandidate as Message
+    }
   }
 
-  if ('message' in record && record.message && typeof record.message === 'object') {
-    return record.message as Message
-  }
+  const hasContent = 'content' in record || 'body' in record || 'text' in record
+  const isMessageEnvelope = record.type === 'message' || record.event === 'message'
 
-  if ('data' in record && record.data && typeof record.data === 'object') {
-    return record.data as Message
-  }
-
-  if ('content' in record) {
+  if (hasContent || isMessageEnvelope) {
     return record as Message
   }
 
@@ -257,6 +285,13 @@ const toIdKey = (value: string | number | null | undefined) => {
 const isTempMessageId = (value: Message['id']) =>
   typeof value === 'string' && value.startsWith('temp-')
 
+const createTempMessageId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 export default function ConversationDetail() {
   const { id } = useParams()
   const { user } = useAuth()
@@ -276,10 +311,12 @@ export default function ConversationDetail() {
   const elementMessageIdRef = useRef(new WeakMap<Element, Message['id']>())
   const sentReadReceiptsRef = useRef(new Set<Message['id']>())
   const pendingReadReceiptsRef = useRef(new Set<Message['id']>())
+  const pendingOutgoingRef = useRef<PendingOutgoing[]>([])
   const typingTimeoutRef = useRef<number | null>(null)
   const isTypingRef = useRef(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const shouldAutoScrollRef = useRef(true)
+  const notifiedMessageIdsRef = useRef(new Set<string>())
 
   const sortedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {
@@ -375,6 +412,68 @@ export default function ConversationDetail() {
   }, [currentUserId, sortedMessages])
 
   const unreadIncomingCount = unreadIncomingMessageIds.length
+
+  const lastMessagePreview = useMemo(() => {
+    for (let index = sortedMessages.length - 1; index >= 0; index -= 1) {
+      const content = sortedMessages[index].content?.trim()
+      if (content) {
+        return content
+      }
+    }
+
+    return null
+  }, [sortedMessages])
+
+  const notifyIncomingMessage = useCallback(
+    (incoming: Message) => {
+      if (typeof window === 'undefined' || !('Notification' in window)) {
+        return
+      }
+
+      if (Notification.permission !== 'granted') {
+        return
+      }
+
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        return
+      }
+
+      const senderKey = toIdKey(incoming.senderId ?? incoming.sender?.id)
+      if (!senderKey || senderKey === currentUserId) {
+        return
+      }
+
+      const messageIdKey = toIdKey(incoming.id)
+      if (messageIdKey && notifiedMessageIdsRef.current.has(messageIdKey)) {
+        return
+      }
+
+      if (messageIdKey) {
+        notifiedMessageIdsRef.current.add(messageIdKey)
+      }
+
+      const senderLabel =
+        incoming.senderName ??
+        incoming.sender?.username ??
+        participantNameById.get(senderKey) ??
+        'New message'
+
+      const notification = new Notification(senderLabel, {
+        body: incoming.content?.trim() || 'You have a new message.',
+        tag: `conversation-${id ?? 'unknown'}-${messageIdKey ?? Date.now()}`,
+      })
+
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+      }
+
+      window.setTimeout(() => {
+        notification.close()
+      }, 6000)
+    },
+    [currentUserId, id, participantNameById],
+  )
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) return null
@@ -474,28 +573,88 @@ export default function ConversationDetail() {
     (incoming: Message) => {
       const normalized = normalizeMessage(incoming)
       const normalizedSenderKey = toIdKey(normalized.senderId ?? normalized.sender?.id)
+      const normalizedIdKey = toIdKey(normalized.id)
       const incomingCreatedAt = normalized.createdAt
         ? new Date(normalized.createdAt).getTime()
         : Date.now()
+      const normalizedContent = normalized.content.trim()
 
-      if (normalized.id === undefined || normalized.id === null) {
-        setMessages((prev) => [...prev, normalized])
-        return
+      let resolvedTempId = normalized.tempId ?? null
+
+      if (resolvedTempId) {
+        pendingOutgoingRef.current = pendingOutgoingRef.current.filter(
+          (pending) => pending.tempId !== resolvedTempId,
+        )
+      } else if (normalizedContent && currentUserId) {
+        const isPotentialOwnMessage =
+          normalizedSenderKey === currentUserId || normalizedSenderKey === null
+
+        if (isPotentialOwnMessage) {
+          let bestPendingIndex = -1
+          let bestDelta = Number.POSITIVE_INFINITY
+
+          pendingOutgoingRef.current.forEach((pending, index) => {
+            if (pending.content !== normalizedContent) {
+              return
+            }
+
+            const delta = Math.abs(pending.createdAtMs - incomingCreatedAt)
+            if (delta <= 120000 && delta < bestDelta) {
+              bestPendingIndex = index
+              bestDelta = delta
+            }
+          })
+
+          if (bestPendingIndex !== -1) {
+            resolvedTempId = pendingOutgoingRef.current[bestPendingIndex].tempId
+            pendingOutgoingRef.current.splice(bestPendingIndex, 1)
+          }
+        }
       }
 
       setMessages((prev) => {
-        const existingIndex = prev.findIndex((message) => message.id === normalized.id)
+        const existingIndex = prev.findIndex((message) => {
+          const messageIdKey = toIdKey(message.id)
+          if (normalizedIdKey && messageIdKey === normalizedIdKey) {
+            return true
+          }
+
+          if (!resolvedTempId) {
+            return false
+          }
+
+          return message.tempId === resolvedTempId || messageIdKey === resolvedTempId
+        })
+
         if (existingIndex !== -1) {
           const next = [...prev]
-          next[existingIndex] = { ...next[existingIndex], ...normalized }
+          const current = next[existingIndex]
+          next[existingIndex] = {
+            ...current,
+            ...normalized,
+            ...(resolvedTempId ? { tempId: resolvedTempId } : {}),
+            status: normalized.status ?? current.status ?? 'sent',
+            id: normalizedIdKey ? normalized.id : current.id,
+            tempId: resolvedTempId ?? normalized.tempId ?? current.tempId,
+          }
           return next
         }
 
         const isCurrentUserMessage =
-          currentUserId !== null && normalizedSenderKey === currentUserId
+          currentUserId !== null &&
+          (normalizedSenderKey === currentUserId || resolvedTempId !== null)
 
         if (isCurrentUserMessage) {
           const optimisticIndex = prev.findIndex((message) => {
+            const messageIdKey = toIdKey(message.id)
+
+            if (
+              resolvedTempId &&
+              (message.tempId === resolvedTempId || messageIdKey === resolvedTempId)
+            ) {
+              return true
+            }
+
             if (!isTempMessageId(message.id)) {
               return false
             }
@@ -505,7 +664,7 @@ export default function ConversationDetail() {
               return false
             }
 
-            if (message.content.trim() !== normalized.content.trim()) {
+            if (message.content.trim() !== normalizedContent) {
               return false
             }
 
@@ -513,25 +672,74 @@ export default function ConversationDetail() {
               ? new Date(message.createdAt).getTime()
               : incomingCreatedAt
 
-            return Math.abs(optimisticCreatedAt - incomingCreatedAt) <= 45000
+            return Math.abs(optimisticCreatedAt - incomingCreatedAt) <= 120000
           })
 
           if (optimisticIndex !== -1) {
             const next = [...prev]
+            const current = next[optimisticIndex]
             next[optimisticIndex] = {
-              ...next[optimisticIndex],
+              ...current,
               ...normalized,
+              ...(resolvedTempId ? { tempId: resolvedTempId } : {}),
               status: normalized.status ?? 'sent',
+              id: normalizedIdKey ? normalized.id : current.id,
+              tempId: resolvedTempId ?? normalized.tempId ?? current.tempId,
             }
             return next
           }
         }
 
-        return [...prev, normalized]
+        if (!normalizedIdKey && normalizedSenderKey && normalizedContent) {
+          const duplicateWithoutIdIndex = prev.findIndex((message) => {
+            const senderKey = toIdKey(message.senderId ?? message.sender?.id)
+            if (senderKey !== normalizedSenderKey) {
+              return false
+            }
+
+            if (message.content.trim() !== normalizedContent) {
+              return false
+            }
+
+            const messageCreatedAt = message.createdAt
+              ? new Date(message.createdAt).getTime()
+              : incomingCreatedAt
+
+            return Math.abs(messageCreatedAt - incomingCreatedAt) <= 3000
+          })
+
+          if (duplicateWithoutIdIndex !== -1) {
+            const next = [...prev]
+            const current = next[duplicateWithoutIdIndex]
+            next[duplicateWithoutIdIndex] = {
+              ...current,
+              ...normalized,
+              ...(resolvedTempId ? { tempId: resolvedTempId } : {}),
+              status: normalized.status ?? current.status,
+              id: normalizedIdKey ? normalized.id : current.id,
+              tempId: resolvedTempId ?? normalized.tempId ?? current.tempId,
+            }
+            return next
+          }
+        }
+
+        const nextId = normalizedIdKey ? normalized.id : resolvedTempId ?? normalized.id
+        if (nextId === undefined || nextId === null) {
+          return prev
+        }
+
+        return [
+          ...prev,
+          {
+            ...normalized,
+            id: nextId,
+            tempId: resolvedTempId ?? normalized.tempId,
+          },
+        ]
       })
 
-      if (id && normalized.content.trim()) {
-        onConversationPreviewUpdate?.(id, normalized.content)
+      if (id && normalizedContent) {
+        onConversationPreviewUpdate?.(id, normalizedContent)
       }
     },
     [currentUserId, id, onConversationPreviewUpdate],
@@ -539,7 +747,10 @@ export default function ConversationDetail() {
 
   const applyReceiptUpdate = useCallback((receipt: ReceiptUpdate) => {
     setMessages((prev) => {
-      const index = prev.findIndex((message) => message.id === receipt.messageId)
+      const receiptMessageIdKey = toIdKey(receipt.messageId)
+      const index = prev.findIndex(
+        (message) => toIdKey(message.id) === receiptMessageIdKey,
+      )
       if (index === -1) {
         return prev
       }
@@ -639,7 +850,27 @@ export default function ConversationDetail() {
   useEffect(() => {
     sentReadReceiptsRef.current.clear()
     pendingReadReceiptsRef.current.clear()
+    pendingOutgoingRef.current = []
+    notifiedMessageIdsRef.current.clear()
   }, [id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return
+    }
+
+    if (Notification.permission === 'default') {
+      void Notification.requestPermission()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!id || !lastMessagePreview) {
+      return
+    }
+
+    onConversationPreviewUpdate?.(id, lastMessagePreview)
+  }, [id, lastMessagePreview, onConversationPreviewUpdate])
 
   useEffect(() => {
     if (!id) {
@@ -724,7 +955,9 @@ export default function ConversationDetail() {
 
         const incoming = parseIncomingMessage(payload)
         if (incoming) {
-          upsertMessage(incoming)
+          const normalizedIncoming = normalizeMessage(incoming)
+          notifyIncomingMessage(normalizedIncoming)
+          upsertMessage(normalizedIncoming)
         }
       } catch {
         // Ignore malformed payloads
@@ -750,7 +983,7 @@ export default function ConversationDetail() {
       unregisterWebSocket(`conversation-${id}`)
       ws.close()
     }
-  }, [id, applyReceiptUpdate, flushPendingReadReceipts, handleTypingEvent, resetTypingState, upsertMessage])
+  }, [id, applyReceiptUpdate, flushPendingReadReceipts, handleTypingEvent, notifyIncomingMessage, resetTypingState, upsertMessage])
 
   useEffect(() => {
     if (!id || !currentUserId) {
@@ -877,8 +1110,19 @@ export default function ConversationDetail() {
 
     setError(null)
 
+    const tempId = createTempMessageId()
+    pendingOutgoingRef.current = [
+      ...pendingOutgoingRef.current,
+      {
+        tempId,
+        content: trimmed,
+        createdAtMs: Date.now(),
+      },
+    ].slice(-100)
+
     const optimisticMessage: Message = normalizeMessage({
-      id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: tempId,
+      tempId,
       content: trimmed,
       createdAt: new Date().toISOString(),
       senderId: user?.id,
@@ -899,6 +1143,8 @@ export default function ConversationDetail() {
       JSON.stringify({
         type: 'message',
         content: trimmed,
+        temp_id: tempId,
+        client_temp_id: tempId,
       }),
     )
 

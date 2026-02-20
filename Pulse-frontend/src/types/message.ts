@@ -1,5 +1,6 @@
 export type Message = {
   id: string | number
+  tempId?: string
   conversationId?: string | number
   senderId?: string | number
   senderName?: string
