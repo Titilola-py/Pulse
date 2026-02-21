@@ -41,6 +41,11 @@ export default function Header() {
 
         <nav id="primary-nav" className={`nav ${isOpen ? 'is-open' : ''}`}>
           {showConversations && (
+            <NavLink to="/dashboard" className={getNavClass} onClick={closeMenu}>
+              Dashboard
+            </NavLink>
+          )}
+          {showConversations && (
             <NavLink to="/conversations" className={getNavClass} onClick={closeMenu}>
               Conversations
             </NavLink>

@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { loginUser } from '../api'
 import { useAuth } from '../context/AuthContext'
@@ -7,6 +7,14 @@ import type { AuthLoginRequest } from '../types'
 
 const ACCESS_TOKEN_KEY = 'accessToken'
 const REFRESH_TOKEN_KEY = 'refreshToken'
+
+type LoginLocationState = {
+  from?: {
+    pathname?: string
+    search?: string
+    hash?: string
+  }
+}
 
 const getErrorMessage = (error: unknown) => {
   if (axios.isAxiosError(error)) {
@@ -30,6 +38,7 @@ const getErrorMessage = (error: unknown) => {
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { refreshUser } = useAuth()
   const [formData, setFormData] = useState<AuthLoginRequest>({
     username: '',
@@ -71,7 +80,16 @@ export default function Login() {
         return
       }
 
-      navigate('/conversations')
+      const state = location.state as LoginLocationState | null
+      const from = state?.from
+      const fromPathname = from?.pathname
+      const shouldUseFrom =
+        Boolean(fromPathname) && fromPathname !== '/login' && fromPathname !== '/register'
+      const redirectPath = shouldUseFrom
+        ? `${fromPathname}${from?.search ?? ''}${from?.hash ?? ''}`
+        : '/dashboard'
+
+      navigate(redirectPath, { replace: true })
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {

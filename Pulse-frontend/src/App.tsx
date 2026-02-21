@@ -4,6 +4,7 @@ import RequireAdmin from './components/RequireAdmin'
 import RequireAuth from './components/RequireAuth'
 import AdminUsers from './pages/AdminUsers'
 import ConversationDetail from './pages/ConversationDetail'
+import Dashboard from './pages/Dashboard'
 import Conversations from './pages/Conversations'
 import ConversationsEmpty from './pages/ConversationsEmpty'
 import ForgotPassword from './pages/ForgotPassword'
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/support" element={<Support />} />
           <Route element={<RequireAuth />}>
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/conversations" element={<Conversations />}>
               <Route index element={<ConversationsEmpty />} />
